@@ -1,0 +1,8 @@
+FROM archlinux:latest
+
+RUN pacman -Syu --noconfirm linux-hardened dracut lvm2
+# Warning: don't use this on production systems (unlock root account without password from initramfs):
+RUN sed s/root:x:/root::/ -i /etc/passwd
+RUN rm -f /boot/initramfs-* && \
+    dracut /boot/initramfs-linux-hardened --no-hostonly --add systemd-veritysetup --install /etc/passwd --add-drivers erofs --add-drivers lvm2
+COPY bootok /

@@ -1,0 +1,15 @@
+FROM alpine:latest
+
+RUN apk add \
+    linux-virt \
+    dracut \
+    cryptsetup \
+    systemd-boot \
+    systemd-efistub \
+    lvm2
+
+COPY dracut-modules /usr/lib/dracut/modules.d
+RUN rm -f /boot/dracut-* && \
+    dracut /boot/initramfs-linux-virt --no-hostonly --install /etc/passwd \
+    --add-drivers erofs --add-drivers dm-verity --add veritytab-apply
+COPY bootok /

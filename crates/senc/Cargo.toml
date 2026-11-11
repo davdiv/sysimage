@@ -1,0 +1,35 @@
+[package]
+name = "senc"
+version = "0.1.0"
+edition = "2024"
+authors = ["DivDE <divde@musicociel.fr>"]
+license = "MIT"
+description = "SENC device-bound AEAD envelope: encrypt/decrypt helper and library"
+
+[lib]
+name = "senc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "senc"
+path = "src/main.rs"
+
+[dependencies]
+# AEAD for the SENC envelope. Same version/features as `sysimage` so a single
+# `aes-gcm` is compiled across the workspace.
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+# RFC 5869 key derivation over the ordered, length-prefixed key components.
+# `0.13` aligns with the workspace's `hmac 0.13` / `sha2 0.11` (digest 0.11).
+hkdf = "0.13"
+sha2 = "0.11"
+# `zeroize` makes the HKDF PRK (held in the HMAC state) scrub itself on drop.
+hmac = { version = "0.13", features = ["zeroize"] }
+# Zeroize key material (IKM/PRK) and plaintext working buffers after use.
+zeroize = "1"
+thiserror = "2"
+# Tiny argument parser: keeps the standalone `senc` binary small (no clap).
+lexopt = "0.3"
+
+[dev-dependencies]
+# For the AES-256-GCM NIST test vector.
+hex = "0.4"

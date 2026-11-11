@@ -1,0 +1,101 @@
+[workspace]
+members = ["crates/senc"]
+# So a bare `cargo build`/`cargo test`/`cargo clippy` at the root also covers the
+# `senc` crate (root package `sysimage` + the helper).
+default-members = [".", "crates/senc"]
+
+[package]
+name = "sysimage"
+version = "0.1.0"
+edition = "2024"
+authors = ["DivDE <divde@musicociel.fr>"]
+license = "MIT"
+description = "Declarative system image builder"
+
+[lib]
+name = "sysimage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sysimage"
+path = "src/main.rs"
+
+[dependencies]
+# Serialization / config / manifest
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Crypto / hashing
+sha2 = "0.11"
+crc32c = "0.6"
+hex = "0.4"
+base64 = "0.23"
+# Secure Boot key generation / Authenticode PE signing (pure-Rust).
+# `rsa` 0.9 depends on `sha2` 0.10 and `rand_core` 0.6 (via `rand` 0.8), which
+# coexist with this project's `sha2` 0.11 / `rand_core` 0.10. Types that cross
+# the RSA API boundary use the re-exports `rsa::sha2` and `rsa::rand_core`.
+rsa = { version = "0.9", features = ["sha2"] }
+rand_core = "0.10"
+# Misc
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+regex = "1"
+walkdir = "2"
+glob = "0.3"
+rand = "0.10"
+zstd = "0.14"
+indicatif = "0.18"   # progress bars for install (file/image copy)
+tar = "0.4"           # ustar archive artifacts (format: "tar")
+# Disk image / filesystem / partition libraries (hadris sub-crates directly,
+# to avoid the umbrella's optional hadris-udf dependency)
+hadris-fat = { version = "2.5.0", features = ["cache"] }  # FAT12/16/32 writer; `cache` enables the write-back FAT-sector cache for fast cluster allocation during install
+hadris-cpio = "2.5.0"    # CPIO newc writer  (default features include std/sync/read/write)
+hadris-part = { version = "2.5.0", features = ["std", "write", "rand", "crc"] }
+# Filesystem drivers. The published packages are `rust-fs-*` (formerly
+# `am-fs-*`); their library crates keep the `fs_*` names used in the source.
+# `rust-fs-core` is pinned to 0.3.x to match what the drivers build against —
+# a 0.4 core exposes a different trait and cannot be mixed with them.
+rust-fs-erofs = "0.5.0"
+rust-fs-ext4 = "0.8.0"
+rust-fs-core = "0.3.17"
+# LUKS2 (pure-Rust writer + reader; luks-core is used for read/decrypt interop)
+luks_core = { version = "0.1.8", package = "luks-core" }
+# Crypto primitives for the LUKS2 writer. luks-core (reader) still pins older
+# versions (sha2 0.10, aes 0.8, …); the two sides coexist because no crypto
+# types cross the `unlock_with_passphrase` API boundary.
+aes = "0.9"
+xts-mode = "0.6"
+argon2 = "0.6"
+pbkdf2 = { version = "0.13", features = ["hmac"], default-features = false }
+hmac = "0.13"
+sha1 = "0.11"
+# AEAD for the `encrypt` build artifact (device-bound credential envelopes).
+# 0.11 aligns with the project's crypto stack (cipher 0.5 / digest 0.11,
+# shared with `aes` 0.9 / `sha2` 0.11 / `hmac` 0.13). The `zeroize` feature
+# makes the cipher/key types scrub themselves on drop.
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+# Zeroize key material and plaintext buffers after use
+zeroize = "1"
+# SENC envelope core: shared by the `encrypt` build artifact and the tiny
+# standalone `senc` helper (crates/senc). Kept dependency-pure (no serde/
+# schemars) so the helper binary stays small.
+senc = { path = "crates/senc" }
+thiserror = "2"
+schemars = "1.2.3"
+jsonschema = { version = "0.60", default-features = false }
+# Interface address enumeration for `sysimage netboot --interface` (pure-Rust
+# wrapper over the getifaddrs syscall; no subprocess).
+if-addrs = "0.15"
+
+# Extended attributes are read with the same safe, syscall-backed API that
+# `tar` uses transitively. Target-gated because the crate is Unix-only.
+[target.'cfg(unix)'.dependencies]
+xattr = "1"
+
+[dev-dependencies]
+# Already regular dependencies; re-declared here so integration tests can build
+# raw (uncompressed) cpio/tar fixtures and zstd-decode artifacts to exercise the
+# descent engine's transparent-compression path.
+tar = "0.4"
+zstd = "0.14"

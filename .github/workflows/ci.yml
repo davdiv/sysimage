@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            erofs-utils \
+            dmsetup \
+            cryptsetup \
+            lvm2 \
+            qemu-utils \
+            qemu-system-x86 \
+            ovmf \
+            podman
+      - run: cargo build --workspace --all-targets --locked
+      - run: podman unshare cargo test --workspace --all-targets --locked
+        env:
+          SYSIMAGE_REQUIRE_TOOLS: "1"
+
+  build-release:
+    name: Release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release --locked
+      - run: ./target/release/sysimage version
+      - run: ./target/release/senc --version

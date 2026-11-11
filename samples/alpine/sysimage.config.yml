@@ -1,0 +1,6 @@
+input: podman+build:${CONFIGDIR}/container
+uki:
+  cmdline: root=/dev/mapper/rootfs rootfstype=erofs ro lockdown=integrity module.sig_enforce=1 console=ttyS0 init=/bootok
+qemu:
+  extraArgs:
+    - -nographic

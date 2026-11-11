@@ -1,0 +1,256 @@
+# Built-in default config
+# Dynamic fields (version, arch, erofs.timestamp, dmVerity.salt) are filled in
+# code by `default_expanded`.
+name: sysimg
+version: "0"
+arch: x86_64
+input: ./rootfs
+outputDirectory: ./output
+tempDirectory: ./temp
+build:
+  erofs:
+    rootfs:
+      input:
+        - destination: ""
+          input: "."
+          excludePatterns:
+            - "boot/**"
+  cpio: {}
+  uki:
+    bootimage: {}
+  veritytab:
+    default: {}
+  efisign: {}
+  block: {}
+  # `encrypt` artifacts wrap a plaintext input into a device-bound,
+  # authenticated-encryption envelope (the "SENC" format, AES-256-GCM). One or
+  # more key components are supplied out-of-band at build time via
+  # `--key name=…` / `--key-file name=…` and never enter the produced image;
+  # they are combined, in order, with HKDF-SHA256 into the 32-byte key (key
+  # files are used exactly as read — no trailing newline is stripped). The
+  # output is deterministic (the same input and key always yield the same
+  # ciphertext).
+  #
+  # The ciphertext can be placed into a filesystem via a normal
+  # `ConfigFileEntry` (`input: build:encrypt:<name>`, with the desired
+  # `destination`). To inject it into a UKI initramfs, wrap it in a `cpio`
+  # artifact whose file set names the desired in-initramfs path, then list that
+  # `build:cpio:<name>` in `uki.initrd`. Example:
+  #
+  #   build:
+  #     encrypt:
+  #       lukscred:
+  #         input: ${CONFIGDIR}/lukskey      # any input specifier
+  #         key: devicekey                    # --key-file devicekey=/path/to/key
+  #         # key: [devicekey, tpm-secret]    # multiple components (order matters)
+  #         # algorithm: aes-256-gcm          # the only supported value (default)
+  #     cpio:
+  #       lukscred:
+  #         input:
+  #           - destination: etc/encrypt/lukscred.enc
+  #             input: build:encrypt:lukscred
+  #   uki:
+  #     initrd:
+  #       - boot/initramfs-*
+  #       - build:cpio:lukscred               # -> /etc/encrypt/lukscred.enc
+  encrypt: {}
+  # `decrypt` artifacts are the inverse of `encrypt`: they unwrap a SENC
+  # envelope back into plaintext at build time. The AEAD algorithm is read from
+  # the envelope header, so only `input` (any input specifier resolving to a
+  # SENC envelope, e.g. `build:encrypt:<name>`) and `key` (the same key
+  # component name(s) the envelope was encrypted with, combined in order with
+  # HKDF-SHA256) are needed. If a named key is not supplied, the build fails and
+  # the ciphertext is never passed through. Unlike `encrypt`, the plaintext
+  # output is content-addressed into the output directory (when reachable), so
+  # use it to feed a decrypted credential into a later build step. Example:
+  #
+  #   build:
+  #     decrypt:
+  #       lukscred:
+  #         input: build:encrypt:lukscred  # or a file: / plain path
+  #         key: devicekey                  # --key-file devicekey=/path/to/key
+  #         # key: [devicekey, tpm-secret]  # same components/order as `encrypt`
+  decrypt: {}
+  # `reencrypt` artifacts rotate a SENC envelope from one key to another in a
+  # single build step (`decrypt` then `encrypt`): `decryptKey` names the key
+  # component(s) the input envelope was encrypted with, and `encryptKey` names
+  # the component(s) to encrypt the output with (both supplied via
+  # `--key`/`--key-file`). The plaintext lives only in memory and is never
+  # materialized as an artifact. `algorithm` selects the output AEAD (default
+  # `aes-256-gcm`). Example:
+  #
+  #   build:
+  #     reencrypt:
+  #       rotate:
+  #         input: build:encrypt:lukscred    # or a file: / plain path
+  #         decryptKey: devicekey            # old key
+  #         encryptKey: newdevicekey         # new key
+  reencrypt: {}
+disk:
+  bootdisk:
+    type: gpt
+    partitions:
+      - name: efi
+        type: C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+        content:
+          type: fat
+          files:
+            - destination: efi/boot/boot${EFIARCH}.efi
+              input: usr/lib/systemd/boot/efi/systemd-boot${EFIARCH}.efi
+            - destination: efi/Linux/${NAME}-${VERSION}-${CONTENTHASH}+1.efi
+              input: build:uki:bootimage
+      - name: data
+        type: 0FC63DAF-8483-4772-8E79-3D69D8477DE4
+        content:
+          type: lvm
+          vg: system
+lvm:
+  system:
+    partitions:
+      - name: rootfs-${CONTENTHASH}
+        content:
+          type: image
+          input: build:erofs:rootfs
+      - name: var
+        content:
+          type: ext4
+erofs:
+  blockSize: 4096
+  timestamp: 0
+dmVerity:
+  dataBlockSize: 4096
+  hashBlockSize: 4096
+  salt: "0"
+cpio:
+  compressionLevel: 3
+# Build parameters. Each declared parameter becomes a `${name}` variable usable
+# anywhere the built-in variables (such as `${CONFIGDIR}`) are substituted
+# (file destinations, input specifiers, and so on). Values are supplied at build
+# time with `sysimage build --param name=value`. A parameter with a `default` is
+# optional; one without a default is mandatory and the build fails unless it is
+# supplied. Passing a name that is not declared here is an error. Example:
+#
+#   parameters:
+#     hostname:
+#       default: localhost
+#     buildId: {}          # no default → mandatory
+parameters: {}
+uki:
+  stub: usr/lib/systemd/boot/efi/linux${EFIARCH}.efi.stub
+  kernel: boot/vmlinuz-*
+  initrd:
+    - boot/initramfs-*
+    - build:veritytab:default
+  cmdline: "root=/dev/mapper/rootfs lockdown=integrity module.sig_enforce=1 rd.emergency=reboot rd.shell=0 panic=30 ro"
+  osrel: etc/os-release
+# QEMU launch settings. Left empty by default: the arch-derived defaults
+# (machine, cpu, firmware, extra args) are resolved at `qemu-install` time from
+# the manifest's `arch` by `default_qemu_settings`. Users may override
+# individual fields here, and those partial overrides are carried through the
+# manifest and applied on top of the arch defaults.
+#
+# TPM devices (each backed by an `swtpm` instance) can be attached under `tpms`,
+# keyed by a stable name used for the persistent state directory. Unspecified
+# fields fall back to per-architecture defaults (model) and TPM 2.0 (version).
+# Example:
+#   qemu:
+#     tpms:
+#       tpm0:
+#         version: "2.0"
+#         swtpmArgs: ["--log", "level=20"]
+#
+# A disk listed under `disks` but not under `disk` is a QEMU-only disk: it must
+# have `input` (resolved to a content-addressed artifact at build time) and is
+# attached read-only instead of being installed. Use `disk: {}` to suppress the
+# built-in bootdisk when only QEMU-only disks are wanted. Example:
+#   disk: {}
+#   qemu:
+#     disks:
+#       rootfs:
+#         input: build:erofs:rootfs
+#         if: virtio
+#
+# Direct-kernel boot files can be supplied with `kernel`, `shim`, `initrd` and
+# `dtb`. `initrd` accepts one or more inputs (a scalar or a list); multiple
+# inputs are concatenated in order like `uki.initrd`, with 4-byte alignment
+# padding between files. Example:
+#   qemu:
+#     kernel: boot/vmlinuz-*
+#     initrd:
+#       - boot/initramfs-*
+#       - build:cpio:extra-files
+#     append: "console=ttyS0"
+qemu: {}
+# Network-boot settings. When present, `sysimage netboot` starts any of the
+# proxy DHCP, TFTP and HTTP servers configured here (each is independently
+# optional), serving the referenced artifacts (resolved at build time into
+# content-addressed output files) to PXE/UEFI/Raspberry Pi clients. Left
+# unset by default.
+#
+# The DHCP server operates in **proxy** mode: it does NOT assign IP addresses
+# or manage leases — another DHCP server on the network handles that. This
+# server only provides netboot-related options so clients can discover where
+# to download boot files. All DHCP options are configurable via the generic
+# `options` map; option 53 (message type) is injected automatically.
+#
+# No IP address is stored in the manifest: use the `${NETBOOT_IP}` variable,
+# resolved at `sysimage netboot` time from the interface the server is bound
+# to (`--interface`/`--bind-ip`, or the default-route address by default).
+#
+# `httpBoot` and `pxeBoot` are build-time convenience presets that live inside
+# `dhcp.profiles[]` entries; each expands into that profile's DHCP `options`
+# map (and header fields) and adds a `match` on the relevant vendor class
+# (option 60). They are consumed at build time and never appear in the
+# manifest.
+#
+# To serve several boot kinds at once, list one `dhcp.profiles` entry per
+# preset — each profile carries its own `match` filter and preset, and the
+# server replies with the first profile that matches the incoming request.
+# A profile with no `match` is a catch-all and should normally be listed last.
+#
+# Example (UEFI HTTP boot on x86-64):
+#   netboot:
+#     http:
+#       files:
+#         "/boot.efi": "build:uki:boot"
+#     dhcp:
+#       profiles:
+#         - httpBoot:
+#             bootUrl: "http://${NETBOOT_IP}/boot.efi"
+#             architectures: [16]   # 16 = x64 UEFI HTTP boot (see UEFI spec §24.7)
+#
+# Example (PXE/TFTP boot on x86-64):
+#   netboot:
+#     tftp:
+#       files:
+#         "BOOTX64.EFI": "build:uki:bootimage"
+#     dhcp:
+#       profiles:
+#         - pxeBoot:
+#             bootFile: "BOOTX64.EFI"
+#             # nextServer defaults to "${NETBOOT_IP}" if omitted
+#             architectures: [8]    # 8 = EFI x86-64 (RFC 4578)
+#
+# Example (full manual DHCP options, e.g. Raspberry Pi TFTP prefix):
+#   netboot:
+#     dhcp:
+#       listen: "${NETBOOT_IP}:67"
+#       profiles:
+#         - siaddr: "${NETBOOT_IP}"
+#           bootFile: "start4.elf"
+#           options:
+#             "54": { type: "ipv4", value: "${NETBOOT_IP}" }
+#             "60": { type: "string", value: "PXEClient" }
+#             "66": { type: "string", value: "${NETBOOT_IP}" }
+#             "67": { type: "string", value: "start4.elf" }
+#             "43": { type: "vendorOptions", value: { "5": "/" } }
+#           match:
+#             mac: ["d8:3a:dd"]  # allowlist by MAC (full "aa:bb:cc:dd:ee:ff" or OUI prefix)
+#     tftp:
+#       listen: "${NETBOOT_IP}:69"
+#       files:
+#         "start4.elf": "file:start4.elf"
+#     http:
+#       listen: "${NETBOOT_IP}:80"
+#       files:
+#         "/rootfs.erofs": "build:erofs:rootfs"
