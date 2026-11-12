@@ -260,5 +260,7 @@ PK/KEK/db key set; the optional passphrase file SENC-encrypts each `.key`).
   so the rest of the test still runs. Both honor the `SYSIMAGE_REQUIRE_TOOLS`
   env var, which turns a missing tool into a hard failure (panic) — set it in
   CI to gate on every interop tool being installed.
-- **`.gitignore` excludes `/target` and `/sample`** (the sample run is a local
-  build artefact, not source).
+- **`.gitignore` excludes `/target`, `output`, `temp`, `qemu` and `sbkeys`** —
+  the default build/install/`qemu-install`/`sbkey-generate` output directories
+  are local artefacts, not source (the patterns match at any depth, so they
+  also cover `samples/*/output` etc.).

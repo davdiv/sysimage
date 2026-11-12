@@ -11,6 +11,7 @@ edition = "2024"
 authors = ["DivDE <divde@musicociel.fr>"]
 license = "MIT"
 description = "Declarative system image builder"
+repository = "https://github.com/davdiv/sysimage"
 
 [lib]
 name = "sysimage"

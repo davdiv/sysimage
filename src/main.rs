@@ -299,6 +299,40 @@ fn main() {
     }
 }
 
+/// Parse repeated `--flag name=value` arguments into a name → value map.
+///
+/// `expected` is the `name=…` form shown in the error message, e.g.
+/// `"name=passphrase"`. Later duplicates overwrite earlier ones.
+fn parse_named_values(
+    flag: &str,
+    values: &[String],
+    expected: &str,
+) -> sysimage::error::Result<std::collections::BTreeMap<String, String>> {
+    let mut map = std::collections::BTreeMap::new();
+    for entry in values {
+        let (name, value) = entry.split_once('=').ok_or_else(|| {
+            sysimage::error::Error::msg(format!(
+                "Invalid {flag} value \"{entry}\": expected {expected}"
+            ))
+        })?;
+        map.insert(name.to_string(), value.to_string());
+    }
+    Ok(map)
+}
+
+/// Like [`parse_named_values`], but each value is turned into a [`PathBuf`].
+fn parse_named_paths(
+    flag: &str,
+    values: &[String],
+    expected: &str,
+) -> sysimage::error::Result<std::collections::BTreeMap<String, PathBuf>> {
+    parse_named_values(flag, values, expected).map(|map| {
+        map.into_iter()
+            .map(|(name, value)| (name, PathBuf::from(value)))
+            .collect()
+    })
+}
+
 fn run(cli: Cli) -> sysimage::error::Result<()> {
     match cli.command {
         Commands::Build {
@@ -311,51 +345,12 @@ fn run(cli: Cli) -> sysimage::error::Result<()> {
             name,
             version,
         } => {
-            let mut key_map = std::collections::BTreeMap::new();
-            for entry in key {
-                let (name, pass) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key value \"{entry}\": expected name=passphrase"
-                    ))
-                })?;
-                key_map.insert(name.to_string(), pass.to_string());
-            }
-            let mut key_file_map = std::collections::BTreeMap::new();
-            for entry in key_file {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key-file value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                key_file_map.insert(name.to_string(), PathBuf::from(path));
-            }
-            let mut sign_map = std::collections::BTreeMap::new();
-            for entry in sign {
-                let (name, dir) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --sign value \"{entry}\": expected name=directory"
-                    ))
-                })?;
-                sign_map.insert(name.to_string(), PathBuf::from(dir));
-            }
-            let mut sign_key_file_map = std::collections::BTreeMap::new();
-            for entry in sign_key_file {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --sign-key-file value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                sign_key_file_map.insert(name.to_string(), PathBuf::from(path));
-            }
-            let mut param_map = std::collections::BTreeMap::new();
-            for entry in param {
-                let (name, value) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --param value \"{entry}\": expected name=value"
-                    ))
-                })?;
-                param_map.insert(name.to_string(), value.to_string());
-            }
+            let key_map = parse_named_values("--key", &key, "name=passphrase")?;
+            let key_file_map = parse_named_paths("--key-file", &key_file, "name=path")?;
+            let sign_map = parse_named_paths("--sign", &sign, "name=directory")?;
+            let sign_key_file_map =
+                parse_named_paths("--sign-key-file", &sign_key_file, "name=path")?;
+            let param_map = parse_named_values("--param", &param, "name=value")?;
             sysimage::build::build_from_file_with_sign_keys(
                 &config,
                 &key_map,
@@ -382,33 +377,9 @@ fn run(cli: Cli) -> sysimage::error::Result<()> {
                     config: &config,
                     manifest: manifest.as_deref(),
                 })?;
-            let mut disk_map = std::collections::BTreeMap::new();
-            for entry in disk {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --disk value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                disk_map.insert(name.to_string(), path.to_string());
-            }
-            let mut key_map = std::collections::BTreeMap::new();
-            for entry in key {
-                let (name, pass) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key value \"{entry}\": expected name=passphrase"
-                    ))
-                })?;
-                key_map.insert(name.to_string(), pass.to_string());
-            }
-            let mut key_file_map = std::collections::BTreeMap::new();
-            for entry in key_file {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key-file value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                key_file_map.insert(name.to_string(), std::path::PathBuf::from(path));
-            }
+            let disk_map = parse_named_values("--disk", &disk, "name=path")?;
+            let key_map = parse_named_values("--key", &key, "name=passphrase")?;
+            let key_file_map = parse_named_paths("--key-file", &key_file, "name=path")?;
             sysimage::install::install(sysimage::install::InstallConfig {
                 manifest,
                 disk: disk_map,
@@ -435,33 +406,9 @@ fn run(cli: Cli) -> sysimage::error::Result<()> {
                     config: &config,
                     manifest: manifest.as_deref(),
                 })?;
-            let mut disk_map = std::collections::BTreeMap::new();
-            for entry in disk {
-                let (name, device) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --disk value \"{entry}\": expected name=/dev/remoteDevice"
-                    ))
-                })?;
-                disk_map.insert(name.to_string(), device.to_string());
-            }
-            let mut key_map = std::collections::BTreeMap::new();
-            for entry in key {
-                let (name, pass) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key value \"{entry}\": expected name=passphrase"
-                    ))
-                })?;
-                key_map.insert(name.to_string(), pass.to_string());
-            }
-            let mut key_file_map = std::collections::BTreeMap::new();
-            for entry in key_file {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key-file value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                key_file_map.insert(name.to_string(), std::path::PathBuf::from(path));
-            }
+            let disk_map = parse_named_values("--disk", &disk, "name=/dev/remoteDevice")?;
+            let key_map = parse_named_values("--key", &key, "name=passphrase")?;
+            let key_file_map = parse_named_paths("--key-file", &key_file, "name=path")?;
             sysimage::ssh::ssh_install(sysimage::ssh::SshInstallConfig {
                 manifest,
                 ssh,
@@ -488,24 +435,8 @@ fn run(cli: Cli) -> sysimage::error::Result<()> {
                     config: &config,
                     manifest: manifest.as_deref(),
                 })?;
-            let mut key_map = std::collections::BTreeMap::new();
-            for entry in key {
-                let (name, pass) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key value \"{entry}\": expected name=passphrase"
-                    ))
-                })?;
-                key_map.insert(name.to_string(), pass.to_string());
-            }
-            let mut key_file_map = std::collections::BTreeMap::new();
-            for entry in key_file {
-                let (name, path) = entry.split_once('=').ok_or_else(|| {
-                    sysimage::error::Error::msg(format!(
-                        "Invalid --key-file value \"{entry}\": expected name=path"
-                    ))
-                })?;
-                key_file_map.insert(name.to_string(), std::path::PathBuf::from(path));
-            }
+            let key_map = parse_named_values("--key", &key, "name=passphrase")?;
+            let key_file_map = parse_named_paths("--key-file", &key_file, "name=path")?;
             sysimage::qemu::qemu_install(manifest, &directory, key_map, key_file_map, wipe, force)?;
             println!(
                 "Wrote QEMU config to {}",
@@ -550,7 +481,11 @@ fn run(cli: Cli) -> sysimage::error::Result<()> {
             Ok(())
         }
         Commands::Version => {
-            println!("sysimage {}", env!("CARGO_PKG_VERSION"));
+            println!(
+                "sysimage {} ({})",
+                env!("CARGO_PKG_VERSION"),
+                option_env!("SYSIMAGE_GIT_SHA").unwrap_or("unknown")
+            );
             Ok(())
         }
         Commands::Netboot {
