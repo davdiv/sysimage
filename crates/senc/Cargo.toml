@@ -5,6 +5,7 @@ edition = "2024"
 authors = ["DivDE <divde@musicociel.fr>"]
 license = "MIT"
 description = "SENC device-bound AEAD envelope: encrypt/decrypt helper and library"
+repository = "https://github.com/davdiv/sysimage"
 
 [lib]
 name = "senc"
