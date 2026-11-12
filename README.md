@@ -89,7 +89,13 @@ sysimage init -c sysimage.config.yml
 
 # 2. Build artifacts + manifest into ./output (content-addressed .bin files).
 sysimage build -c sysimage.config.yml
-#    …with build parameters, keys or signing material:
+#    Optional inputs, only needed when the config references them:
+#    · `--param name=value` for build parameters — declare each one under
+#      `parameters:` in the config first (an undeclared name is an error):
+#        parameters:
+#          hostname: { default: localhost }
+#    · `--key` / `--key-file name=…` for LUKS passphrases and SENC key parts
+#    · `--sign name=dir` (+ `--sign-key-file`) for Secure Boot signing keys
 sysimage build -c sysimage.config.yml \
     --param hostname=myhost \
     --key-file luks=rootfs.key \
@@ -128,8 +134,10 @@ commented reference defaults live in the repo at
 `src/model/default_config.yml`). Highlights:
 
 - **Top level**: `name`, `version`, `arch` (`x64`, `arm64`, …), `input`,
-  `outputDirectory`, `tempDirectory`, `parameters` (user-declared `${VAR}`
-  build parameters, supplied via `--param`), and the sections below.
+  `outputDirectory`, `tempDirectory`, `parameters`, and the sections below.
+  Each `parameters` entry (optional `default`, optional `description`) becomes
+  a `${name}` variable supplied via `--param name=value`; one without a
+  `default` is mandatory, and an undeclared name is rejected.
 - **`input`**: where rootfs content comes from — a path/glob, `file:`, a
   `build:<kind>:<name>` artifact, `sign:<name>` (a `--sign` directory), or a
   container image via `podman:` / `podman+build:` (the samples use the latter
@@ -137,7 +145,7 @@ commented reference defaults live in the repo at
 - **`build`**: named artifacts of each kind (`erofs`, `cpio`, `uki`,
   `veritytab`, `efisign`, `encrypt`, `decrypt`, `reencrypt`, `block`),
   referenced elsewhere as `build:<kind>:<name>`. A `cpio`/`erofs` artifact's
-  `input` is a list of `{ destination, input, includePatterns,
+  `input` is a list of `{ destination, input, includePattern,
   excludePatterns }` entries.
 - **`disk`**: the top-level disks (e.g. `bootdisk`), each a block tree rooted
   at `type: gpt` or `type: mbr`. GPT partitions take `name`, a type GUID or
