@@ -48,10 +48,10 @@ fn main() {
         // re-run on every build, which is correct — never stale — at the
         // cost of one cheap `git` call per build.
         println!("cargo:rerun-if-changed=.git/HEAD");
-        if let Ok(head) = fs::read_to_string(package_dir.join(".git/HEAD")) {
-            if let Some(reference) = head.trim().strip_prefix("ref: ") {
-                println!("cargo:rerun-if-changed=.git/{reference}");
-            }
+        if let Ok(head) = fs::read_to_string(package_dir.join(".git/HEAD"))
+            && let Some(reference) = head.trim().strip_prefix("ref: ")
+        {
+            println!("cargo:rerun-if-changed=.git/{reference}");
         }
         if package_dir.join(".git/packed-refs").is_file() {
             println!("cargo:rerun-if-changed=.git/packed-refs");
