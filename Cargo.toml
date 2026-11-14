@@ -55,12 +55,12 @@ hadris-cpio = "2.5.0"    # CPIO newc writer  (default features include std/sync/
 hadris-part = { version = "2.5.0", features = ["std", "write", "rand", "crc"] }
 # Filesystem drivers. The published packages are `rust-fs-*` (formerly
 # `am-fs-*`); their library crates keep the `fs_*` names used in the source.
-# `rust-fs-core` is on the 0.4 line used by `rust-fs-erofs` for the shared
-# block-device traits; `rust-fs-ext4` still links core 0.3 internally, but no
-# core-typed values cross between the two drivers here.
-rust-fs-erofs = "0.5.1"
+# `rust-fs-erofs` 0.5.1+ moves to `rust-fs-core` 0.4 while `rust-fs-ext4` 0.8
+# still uses core 0.3; linking both core versions duplicates the `fs_core_*`
+# FFI symbols, so hold erofs on 0.5.0 until ext4 catches up.
+rust-fs-erofs = "=0.5.0"
 rust-fs-ext4 = "0.8.0"
-rust-fs-core = "0.4"
+rust-fs-core = "0.3.17"
 # LUKS2 (pure-Rust writer + reader; luks-core is used for read/decrypt interop)
 luks_core = { version = "0.1.8", package = "luks-core" }
 # Crypto primitives for the LUKS2 writer. luks-core (reader) still pins older
