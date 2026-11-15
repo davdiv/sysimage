@@ -1157,10 +1157,14 @@ fn sgdisk_create<H: Host>(
         })
 }
 
-/// `lvcreate -l <extents> -n <name> <vg>`.
+/// `lvcreate --autobackup n -l <extents> -n <name> <vg>`.
+///
+/// Metadata backup is disabled because this is an image install, not an
+/// interactive LVM change: a missing/full host backup directory must not make
+/// the install fail.
 fn lvcreate<H: Host>(host: &H, vg: &str, name: &str, extents: u64) -> Result<()> {
     let l = format!("{extents}");
-    host.exec(&["lvcreate", "-l", &l, "-n", name, vg])
+    host.exec(&["lvcreate", "--autobackup", "n", "-l", &l, "-n", name, vg])
         .map(|_| ())
         .map_err(|e| Error::msg(format!("lvcreate \"{name}\" in VG \"{vg}\": {e}")))
 }
@@ -1576,6 +1580,73 @@ mod tests {
         assert_eq!(
             first_crypt_child(&v).as_deref(),
             Some("/dev/mapper/cryptlvm")
+        );
+    }
+
+    /// Records the commands issued through [`Host::exec`].
+    #[derive(Default)]
+    struct CommandRecorder {
+        commands: std::cell::RefCell<Vec<Vec<String>>>,
+    }
+
+    impl Host for CommandRecorder {
+        type RawGuard = ();
+
+        fn label(&self) -> &str {
+            "recorder"
+        }
+
+        fn exec(&self, cmd: &[&str]) -> Result<String> {
+            self.commands
+                .borrow_mut()
+                .push(cmd.iter().map(|s| s.to_string()).collect());
+            if cmd.first() == Some(&"lvcreate") {
+                Ok(String::new())
+            } else {
+                Err(Error::msg(format!("unexpected command {cmd:?}")))
+            }
+        }
+
+        fn exec_optional(&self, cmd: &[&str]) -> Option<String> {
+            self.exec(cmd).ok()
+        }
+
+        fn pipe(&self, _cmd: &str, _input: &mut dyn Read) -> Result<()> {
+            unimplemented!("recorder pipe")
+        }
+
+        fn open_disk_region(
+            &self,
+            _device: &str,
+            _min_size: u64,
+        ) -> Result<(DiskRegion, bool, Self::RawGuard)> {
+            unimplemented!("recorder open_disk_region")
+        }
+
+        fn open_raw_region(&self, _device: &str) -> Result<(DiskRegion, Self::RawGuard)> {
+            unimplemented!("recorder open_raw_region")
+        }
+    }
+
+    /// LV creation must not depend on the host being able to write LVM metadata
+    /// backups, or an install can fail for an unrelated host-side reason.
+    #[test]
+    fn lvcreate_disables_metadata_backup() {
+        let host = CommandRecorder::default();
+        lvcreate(&host, "vg0", "root", 7).unwrap();
+        let commands = host.commands.borrow();
+        assert_eq!(
+            commands.as_slice(),
+            [vec![
+                "lvcreate".to_string(),
+                "--autobackup".to_string(),
+                "n".to_string(),
+                "-l".to_string(),
+                "7".to_string(),
+                "-n".to_string(),
+                "root".to_string(),
+                "vg0".to_string(),
+            ]]
         );
     }
 }
