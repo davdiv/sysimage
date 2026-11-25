@@ -417,8 +417,7 @@ fn read_vg_with_lvs() {
 
     let read_vg = lvm::read_vg(&[&path]).unwrap();
     assert_eq!(read_vg.lvs.len(), 3);
-    for i in 0..3 {
-        let lv = &read_vg.lvs[i];
+    for (i, lv) in read_vg.lvs.iter().enumerate() {
         assert_eq!(lv.name, format!("lv{i}"));
         assert_eq!(lv.segments.len(), 1);
         assert_eq!(lv.segments[0].extent_count, 1);
