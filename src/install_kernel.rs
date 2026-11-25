@@ -1157,16 +1157,31 @@ fn sgdisk_create<H: Host>(
         })
 }
 
-/// `lvcreate --autobackup n -l <extents> -n <name> <vg>`.
+/// `lvcreate --autobackup n --yes -l <extents> -n <name> <vg>`.
 ///
 /// Metadata backup is disabled because this is an image install, not an
 /// interactive LVM change: a missing/full host backup directory must not make
-/// the install fail.
+/// the install fail. `--yes` is required because a fresh LV's extents may still
+/// carry signatures from previous use (a previous LV, filesystem or RAID
+/// member): `lvcreate` prompts to wipe each detected signature, and the prompt
+/// cannot be answered here (no TTY), which aborts the create with "Failed to
+/// wipe signatures on logical volume ... Aborting. Failed to wipe start of new
+/// LV." Answering yes is safe — a new LV for this install should start clean.
 fn lvcreate<H: Host>(host: &H, vg: &str, name: &str, extents: u64) -> Result<()> {
     let l = format!("{extents}");
-    host.exec(&["lvcreate", "--autobackup", "n", "-l", &l, "-n", name, vg])
-        .map(|_| ())
-        .map_err(|e| Error::msg(format!("lvcreate \"{name}\" in VG \"{vg}\": {e}")))
+    host.exec(&[
+        "lvcreate",
+        "--autobackup",
+        "n",
+        "--yes",
+        "-l",
+        &l,
+        "-n",
+        name,
+        vg,
+    ])
+    .map(|_| ())
+    .map_err(|e| Error::msg(format!("lvcreate \"{name}\" in VG \"{vg}\": {e}")))
 }
 
 /// Partition-name (PARTLABEL) → `/dev/<name>` map for a disk.
@@ -1641,12 +1656,29 @@ mod tests {
                 "lvcreate".to_string(),
                 "--autobackup".to_string(),
                 "n".to_string(),
+                "--yes".to_string(),
                 "-l".to_string(),
                 "7".to_string(),
                 "-n".to_string(),
                 "root".to_string(),
                 "vg0".to_string(),
             ]]
+        );
+    }
+
+    /// A fresh LV's extents can still carry a filesystem/RAID signature from a
+    /// previous use, for which `lvcreate` prompts "Wipe it? [y/n]". There is no
+    /// TTY to answer it, and the default answer aborts the create, so `lvcreate`
+    /// must run non-interactively with `--yes`.
+    #[test]
+    fn lvcreate_is_non_interactive() {
+        let host = CommandRecorder::default();
+        lvcreate(&host, "vg0", "root", 7).unwrap();
+        let commands = host.commands.borrow();
+        let argv = &commands[0];
+        assert!(
+            argv.iter().any(|a| a == "--yes" || a == "-y"),
+            "lvcreate must pass --yes so signature-wipe prompts cannot block the install: {argv:?}"
         );
     }
 }
